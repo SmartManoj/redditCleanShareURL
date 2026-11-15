@@ -15,6 +15,7 @@
 
     // Short share links look like /r/<subreddit>/s/<id> and redirect to the real post or comment
     const SHARE_PATH = /^\/(r|u|user)\/[^/]+\/s\/\w+\/?$/;
+    const PERMALINK_PATH = /^\/(r|u|user)\/[^/]+\/comments\//;
 
     // Remove tracking query params (utm_*, share_id) in place; returns true if any were removed
     function removeTrackingParams(url) {
@@ -23,32 +24,13 @@
         return tracking.length > 0;
     }
 
-    // Remember the post or comment whose share menu was used last. Reddit puts a relative
-    // `permalink` attribute on <shreddit-post>, <shreddit-comment-share-button>, etc.
-    let lastPermalink = null;
-    let lastPermalinkTime = 0;
-    function rememberPermalink(e) {
-        for (const node of e.composedPath()) {
-            const permalink = node instanceof Element && node.getAttribute('permalink');
-            if (permalink && permalink.startsWith('/')) {
-                lastPermalink = permalink;
-                lastPermalinkTime = Date.now();
-                return;
-            }
-        }
-    }
-    window.addEventListener('click', rememberPermalink, true);
-    window.addEventListener('keydown', rememberPermalink, true);
-
-    // Resolve a /s/ link to the full URL of the shared post or comment. The current page URL is
-    // not used: it has no domain, and on a feed or for a comment it points to the wrong place.
+    // Resolve a /s/ link to the full URL of the post or comment it redirects to. The current page
+    // URL is not used: it has no domain, and on a feed or for a comment it points to the wrong place.
+    // If the link does not resolve to a post or comment, keep Reddit's /s/ link: it still works.
     async function resolveShareLink(url) {
-        if (lastPermalink && Date.now() - lastPermalinkTime < 60 * 1000) {
-            return new URL(lastPermalink, location.origin);
-        }
-        const response = await fetch(url.href, { method: 'HEAD', credentials: 'omit' });
+        const response = await fetch(url.href, { method: 'HEAD', signal: AbortSignal.timeout(3000) });
         const resolved = new URL(response.url);
-        return SHARE_PATH.test(resolved.pathname) ? url : resolved;
+        return PERMALINK_PATH.test(resolved.pathname) ? resolved : url;
     }
 
     // Clean a Reddit link; any other text is returned unchanged
